@@ -7,6 +7,9 @@ import org.springframework.web.socket.handler.TextWebSocketHandler;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
+import java.io.IOException;
+import java.util.Map;
+
 @Component
 public class CollabWebSocketHandler extends TextWebSocketHandler {
 
@@ -15,9 +18,10 @@ public class CollabWebSocketHandler extends TextWebSocketHandler {
     private CRDTOperationRelayService crdtOperationRelayService;
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
+        String code = null;
         try {
             String uri = session.getUri().toString();  // Example: ws://localhost:8080/ws/edit?code=edit-xxxx
-            String code = null;
+
 
             if (uri.contains("?code=")) {
                 code = uri.split("\\?code=")[1];
@@ -45,10 +49,25 @@ public class CollabWebSocketHandler extends TextWebSocketHandler {
             }
 
             System.out.println("User connected with role: " + session.getAttributes().get("role") + " | ID: " + session.getId());
+                    // Notify others in the session about this user's join
+            CollabSession sessionRoom = SessionManager.getSession(code);
+            if (sessionRoom != null) {
+                String joinMsg = new com.google.gson.Gson().toJson(Map.of(
+                        "type", "join",
+                        "uid", session.getId()
+                ));
 
+                for (WebSocketSession s : sessionRoom.getUsers()) {
+                    if (s.isOpen() && !s.getId().equals(session.getId())) {
+                        s.sendMessage(new TextMessage(joinMsg));
+                    }
+                }
+            }
         } catch (Exception e) {
             e.printStackTrace();
         }
+
+
     }
 
 
@@ -59,27 +78,43 @@ public class CollabWebSocketHandler extends TextWebSocketHandler {
         System.out.println("Raw message: " + payload);
 
         String code = (String) session.getAttributes().get("code");
-
-        if (code == null) {
-            System.out.println("No session code found for user: " + session.getId());
-            return;
-        }
-
         String role = (String) session.getAttributes().get("role");
 
-        if (role == null || !role.equals("editor")) {
-            System.out.println("Unauthorized edit attempt by viewer: " + session.getId());
+        if (code == null || role == null) {
+            System.out.println("Missing session code or role for user: " + session.getId());
             return;
         }
 
         try {
-            EditOperation op = new com.google.gson.Gson().fromJson(payload, EditOperation.class);
-            System.out.println("Parsed operation: " + op.toString());
+            // Parse the message into a ClientMessage (supports type: "edit", "cursor")
+            ClientMessage clientMsg = new com.google.gson.Gson().fromJson(payload, ClientMessage.class);
+            System.out.println("Parsed message: " + clientMsg.toString());
 
-            crdtOperationRelayService.relayOperation(op, code, message);
+            if (clientMsg.type.equals("edit")) {
+                if (!role.equals("editor")) {
+                    System.out.println("Viewer attempted to edit: " + session.getId());
+                    return;
+                }
+
+                // You could also extract more specific edit fields here if needed
+                crdtOperationRelayService.relayOperation(null, code, message); // for now pass null for EditOperation
+
+            } else if (clientMsg.type.equals("cursor")) {
+                // Just broadcast the message to others in the session
+                CollabSession collabSession = SessionManager.getSession(code);
+                if (collabSession != null) {
+                    for (WebSocketSession s : collabSession.getUsers()) {
+                        if (s.isOpen() && !s.getId().equals(session.getId())) {
+                            s.sendMessage(message); // Relay cursor position to others
+                        }
+                    }
+                }
+            } else {
+                System.out.println("Unknown message type: " + clientMsg.type);
+            }
 
         } catch (Exception e) {
-            System.out.println("Invalid message format: " + e.getMessage());
+            System.out.println("Failed to parse client message: " + e.getMessage());
         }
     }
 
@@ -87,8 +122,9 @@ public class CollabWebSocketHandler extends TextWebSocketHandler {
 
 
 
+
     @Override
-    public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
+    public void afterConnectionClosed(WebSocketSession session, CloseStatus status) throws IOException {
         String code = (String) session.getAttributes().get("code");
 
         if (code == null) {
@@ -108,6 +144,28 @@ public class CollabWebSocketHandler extends TextWebSocketHandler {
         } else {
             System.out.println("Session not found for disconnected user: " + session.getId());
         }
+        if (collabSession != null) {
+            collabSession.removeUser(session);
+            System.out.println("User " + session.getId() + " removed from session '" + code + "'");
+
+            // 🔥 Broadcast leave event
+            String leaveMsg = new com.google.gson.Gson().toJson(Map.of(
+                    "type", "leave",
+                    "uid", session.getId()
+            ));
+
+            for (WebSocketSession s : collabSession.getUsers()) {
+                if (s.isOpen()) {
+                    s.sendMessage(new TextMessage(leaveMsg));
+                }
+            }
+
+            if (collabSession.getUsers().isEmpty()) {
+                SessionManager.removeSession(code);
+                System.out.println("Session '" + code + "' is now empty and has been removed.");
+            }
+        }
+
     }
 
 }
