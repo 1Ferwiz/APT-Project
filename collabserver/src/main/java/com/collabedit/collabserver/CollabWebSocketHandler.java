@@ -16,8 +16,7 @@ public class CollabWebSocketHandler extends TextWebSocketHandler {
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
         try {
-            // Extract the session code from the URL
-            String uri = session.getUri().toString();  // Example: ws://localhost:8080/ws/edit?code=abc123
+            String uri = session.getUri().toString();  // Example: ws://localhost:8080/ws/edit?code=edit-xxxx
             String code = null;
 
             if (uri.contains("?code=")) {
@@ -30,14 +29,22 @@ public class CollabWebSocketHandler extends TextWebSocketHandler {
                 return;
             }
 
-            // Get or create the session and add this user
             CollabSession collabSession = SessionManager.getOrCreateSession(code);
             collabSession.addUser(session);
 
-            // Attach session code to this WebSocket for deleting the user after connection is closed
             session.getAttributes().put("code", code);
 
-            System.out.println("User connected to session '" + code + "': " + session.getId());
+            // 🔥 New code: detect role
+            if (code.startsWith("edit-")) {
+                session.getAttributes().put("role", "editor");
+            } else if (code.startsWith("view-")) {
+                session.getAttributes().put("role", "viewer");
+            } else {
+                System.out.println("Invalid code format: " + code);
+                session.close();
+            }
+
+            System.out.println("User connected with role: " + session.getAttributes().get("role") + " | ID: " + session.getId());
 
         } catch (Exception e) {
             e.printStackTrace();
@@ -51,25 +58,31 @@ public class CollabWebSocketHandler extends TextWebSocketHandler {
         String payload = message.getPayload();
         System.out.println("Raw message: " + payload);
 
-        // Get the session code for this user
         String code = (String) session.getAttributes().get("code");
+
         if (code == null) {
             System.out.println("No session code found for user: " + session.getId());
             return;
         }
 
+        String role = (String) session.getAttributes().get("role");
+
+        if (role == null || !role.equals("editor")) {
+            System.out.println("Unauthorized edit attempt by viewer: " + session.getId());
+            return;
+        }
+
         try {
-            // Parse the JSON into EditOperation
             EditOperation op = new com.google.gson.Gson().fromJson(payload, EditOperation.class);
             System.out.println("Parsed operation: " + op.toString());
 
-            // Relay the operation to other users via the Service
             crdtOperationRelayService.relayOperation(op, code, message);
 
         } catch (Exception e) {
             System.out.println("Invalid message format: " + e.getMessage());
         }
     }
+
 
 
 
