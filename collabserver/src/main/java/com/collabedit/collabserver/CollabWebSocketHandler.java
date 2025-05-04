@@ -13,6 +13,8 @@ import java.util.Map;
 
 @Component
 public class CollabWebSocketHandler extends TextWebSocketHandler {
+    @Autowired
+    private CRDTService crdtService;
 
 
     @Autowired
@@ -105,11 +107,15 @@ public class CollabWebSocketHandler extends TextWebSocketHandler {
                     return;
                 }
 
-                // You could also extract more specific edit fields here if needed
                 EditOperation operation = new Gson().fromJson(new Gson().toJson(clientMsg.payload), EditOperation.class);
+
+                if ("insert".equals(operation.op)) {
+                    crdtService.insert(code, operation);
+                } else if ("delete".equals(operation.op)) {
+                    crdtService.delete(code,operation);
+                }
                 crdtOperationRelayService.relayOperation(operation, code, message);
-            }
-            else if (clientMsg.type.equals("cursor")) {
+            } else if (clientMsg.type.equals("cursor")) {
                 // Just broadcast the message to others in the session
                 CollabSession collabSession = SessionManager.getSession(code);
                 if (collabSession != null) {

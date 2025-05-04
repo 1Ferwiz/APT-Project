@@ -1,23 +1,26 @@
 package com.collabedit.collabserver;
 
+import java.util.Arrays;
+
 public class EditOperation {
-    public String op;         // "insert" or "delete"
-    public int uid;           // user ID
-    public String clock;      // timestamp (e.g. "00:01")
-    public String value;      // for insert only
-    public String[] id;       // for delete only
-    public String[] parent;   // for insert only
+    public String op; // "insert" or "delete"
+    public String value; // Only for inserts
+    public int uid;
+    public String clock;
+    public String[] parent; // clock of the parent
+    public String[] id; // unique ID of this char (clock + uid)
 
     @Override
-    //shakl el jason el mstneeh
     public String toString() {
         return "EditOperation{" +
                 "op='" + op + '\'' +
+                ", value='" + value + '\'' +
                 ", uid=" + uid +
                 ", clock='" + clock + '\'' +
-                ", value='" + value + '\'' +
-                ", id=" + (id != null ? "[" + String.join(",", id) + "]" : null) +
-                ", parent=" + (parent != null ? "[" + String.join(",", parent) + "]" : null) +
+                ", parent=" + Arrays.toString(parent) +
+                ", id=" + Arrays.toString(id) +
                 '}';
     }
 }
+
+

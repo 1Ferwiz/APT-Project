@@ -9,10 +9,6 @@ public class ClientMessage {
 
     @Override
     public String toString() {
-        return "ClientMessage{" +
-                "type='" + type + '\'' +
-                ", uid=" + uid +
-                ", payload=" + payload +
-                '}';
+        return "ClientMessage{type='" + type + "', uid=" + uid + ", payload=" + payload+"}";
     }
 }
