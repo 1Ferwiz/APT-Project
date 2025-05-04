@@ -15,7 +15,7 @@ public class CRDTOperationRelayService {
             return;
         }
 
-        for (WebSocketSession s : session.getUsers()) {
+        for (WebSocketSession s : session.getUsers().values()) {
             try {
                 if (s.isOpen()) {
                     s.sendMessage(rawMessage);  // Relay the original message

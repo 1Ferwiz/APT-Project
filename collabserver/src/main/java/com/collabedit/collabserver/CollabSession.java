@@ -3,32 +3,66 @@ package com.collabedit.collabserver;
 import org.springframework.web.socket.WebSocketSession;
 
 import java.util.List;
-import java.util.concurrent.CopyOnWriteArrayList;//3lshan kol thread tb2a leeha 3laka bkol user
-//3lshan mmkn user y2fl w ba2eet el user by2o aw yktbo aw kda
-//zai room kdaa y3ny document
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
 public class CollabSession {
-    private final String code;//lkol document leeh code mo3ayn
-    private final List<WebSocketSession> users;
-    //each websocketsession y3ny one user btgm3 feeha kol el users
+    private final String code;  // لكل document له code معين
+
+    // Map of users: userId -> WebSocketSession
+    private final Map<String, WebSocketSession> users = new ConcurrentHashMap<>();
+
+    // Per-user Undo/Redo manager map: userId -> UndoRedoManager
+    private final Map<String, UndoRedoManager> userUndoManagers = new ConcurrentHashMap<>();
+
+    // Stores the latest full document content (for import/export)
+    private String documentContent = "";
 
     public CollabSession(String code) {
         this.code = code;
-        this.users = new CopyOnWriteArrayList<>();//list fadya
     }
 
     public String getCode() {
         return code;
     }
 
-    public void addUser(WebSocketSession session) {
-        users.add(session);
+    // Add user to the session
+    public void addUser(String userId, WebSocketSession session) {
+        users.put(userId, session);
     }
 
-    public void removeUser(WebSocketSession session) {
-        users.remove(session);
+    // Remove user from the session
+    public void removeUser(String userId) {
+        users.remove(userId);
     }
 
-    public List<WebSocketSession> getUsers() {
+    // Get list of active user IDs
+    public List<String> getActiveUserIds() {
+        return users.keySet().stream().toList();
+    }
+
+    // Get the map of users (userId → session)
+    public Map<String, WebSocketSession> getUsers() {
         return users;
+    }
+
+    // Get or create the UndoRedoManager for a user
+    public UndoRedoManager getOrCreateUndoRedoManager(String userId) {
+        return userUndoManagers.computeIfAbsent(userId, k -> new UndoRedoManager());
+    }
+
+    // Get the UndoRedoManager map
+    public Map<String, UndoRedoManager> getUserUndoManagers() {
+        return userUndoManagers;
+    }
+
+    // Set the full document content
+    public void setDocumentContent(String content) {
+        this.documentContent = content;
+    }
+
+    // Get the full document content
+    public String getDocumentContent() {
+        return documentContent;
     }
 }
