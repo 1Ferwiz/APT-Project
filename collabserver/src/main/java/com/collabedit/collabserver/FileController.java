@@ -1,5 +1,6 @@
 package com.collabedit.collabserver;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import java.util.Map;
@@ -19,12 +20,16 @@ public class FileController {
     }
 
     // ⬇️ Export: Return the current text of a session
+    @Autowired
+    private CRDTService crdtService;
+
     @GetMapping("/export")
     public ResponseEntity<String> exportText(@RequestParam String code) {
-        StringBuilder content = sessionTextStore.get(code);
-        if (content == null) {
+        String content = crdtService.exportDocument(code);
+        if (content == null || content.isEmpty()) {
             return ResponseEntity.status(404).body("No content found for session: " + code);
         }
-        return ResponseEntity.ok(content.toString());
+        return ResponseEntity.ok(content);
     }
+
 }

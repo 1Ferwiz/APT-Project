@@ -1,5 +1,6 @@
 package com.collabedit.collabserver;
 
+import com.google.gson.Gson;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
@@ -12,10 +13,14 @@ import java.util.Map;
 
 @Component
 public class CollabWebSocketHandler extends TextWebSocketHandler {
+    @Autowired
+    private CRDTService crdtService;
 
 
     @Autowired
     private CRDTOperationRelayService crdtOperationRelayService;
+    //injects your relay service.
+    // When someone sends an "edit" message, this service will relay it to other users.
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
         String code = null;
@@ -37,8 +42,9 @@ public class CollabWebSocketHandler extends TextWebSocketHandler {
             collabSession.addUser(session);
 
             session.getAttributes().put("code", code);
+            //Save the session code into this WebSocket connection.
 
-            // 🔥 New code: detect role
+
             if (code.startsWith("edit-")) {
                 session.getAttributes().put("role", "editor");
             } else if (code.startsWith("view-")) {
@@ -56,12 +62,14 @@ public class CollabWebSocketHandler extends TextWebSocketHandler {
                         "type", "join",
                         "uid", session.getId()
                 ));
+                //Creates a JSON object that says: “user with this ID has joined”
 
                 for (WebSocketSession s : sessionRoom.getUsers()) {
                     if (s.isOpen() && !s.getId().equals(session.getId())) {
                         s.sendMessage(new TextMessage(joinMsg));
                     }
                 }
+                //Broadcast that message to all other users in the same session.
             }
         } catch (Exception e) {
             e.printStackTrace();
@@ -86,7 +94,10 @@ public class CollabWebSocketHandler extends TextWebSocketHandler {
         }
 
         try {
-            // Parse the message into a ClientMessage (supports type: "edit", "cursor")
+            // ClientMessage has:
+            //type: “edit” or “cursor”
+            //uid: user ID
+            //payload: map of the actual edit/cursor data
             ClientMessage clientMsg = new com.google.gson.Gson().fromJson(payload, ClientMessage.class);
             System.out.println("Parsed message: " + clientMsg.toString());
 
@@ -96,9 +107,14 @@ public class CollabWebSocketHandler extends TextWebSocketHandler {
                     return;
                 }
 
-                // You could also extract more specific edit fields here if needed
-                crdtOperationRelayService.relayOperation(null, code, message); // for now pass null for EditOperation
+                EditOperation operation = new Gson().fromJson(new Gson().toJson(clientMsg.payload), EditOperation.class);
 
+                if ("insert".equals(operation.op)) {
+                    crdtService.insert(code, operation);
+                } else if ("delete".equals(operation.op)) {
+                    crdtService.delete(code,operation);
+                }
+                crdtOperationRelayService.relayOperation(operation, code, message);
             } else if (clientMsg.type.equals("cursor")) {
                 // Just broadcast the message to others in the session
                 CollabSession collabSession = SessionManager.getSession(code);
@@ -133,22 +149,12 @@ public class CollabWebSocketHandler extends TextWebSocketHandler {
         }
 
         CollabSession collabSession = SessionManager.getSession(code);
-        if (collabSession != null) {
-            collabSession.removeUser(session);//bysheel kol el users
-            System.out.println("User " + session.getId() + " removed from session '" + code + "'");
 
-            if (collabSession.getUsers().isEmpty()) {
-                SessionManager.removeSession(code);
-                System.out.println("Session '" + code + "' is now empty and has been removed.");
-            }
-        } else {
-            System.out.println("Session not found for disconnected user: " + session.getId());
-        }
         if (collabSession != null) {
             collabSession.removeUser(session);
             System.out.println("User " + session.getId() + " removed from session '" + code + "'");
 
-            // 🔥 Broadcast leave event
+
             String leaveMsg = new com.google.gson.Gson().toJson(Map.of(
                     "type", "leave",
                     "uid", session.getId()
